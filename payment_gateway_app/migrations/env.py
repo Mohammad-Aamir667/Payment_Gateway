@@ -7,6 +7,7 @@ from alembic import context
 from app.infrastructure.database import Base
 from app.merchant.models import Merchant 
 from app.auth.models import RefreshToken
+from app.merchant_credentials.models import APIKey
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
