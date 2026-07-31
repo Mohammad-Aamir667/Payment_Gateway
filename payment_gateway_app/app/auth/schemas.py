@@ -67,4 +67,6 @@ class MerchantLoginRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str    
-    
+
+class DeviceIdentifier(BaseModel):
+    device_identifier:DeviceType    

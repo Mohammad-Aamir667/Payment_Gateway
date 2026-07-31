@@ -1,5 +1,5 @@
 from uuid import UUID, uuid4
-from sqlalchemy import String, DateTime, func, Enum as SQLEnum, ForeignKey
+from sqlalchemy import String, DateTime, func, Enum as SQLEnum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.database import Base
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -15,6 +15,12 @@ class KeyStatus(str, Enum):
 
 class APIKey(Base):
     __tablename__ = "api_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "merchant_id",
+            "key_name",
+            name="uq_merchant_key_name",
+        )),
     api_key_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True),
             primary_key=True,
             default=uuid4,

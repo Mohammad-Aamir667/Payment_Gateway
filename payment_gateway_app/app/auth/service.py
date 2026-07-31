@@ -4,13 +4,9 @@ from fastapi import HTTPException, status
 from app.auth.repository import AuthRepository
 from app.auth.schemas import MerchantSignupRequest
 from app.auth.schemas import MerchantLoginRequest , DeviceType
-from app.auth.security import (
-    hash_password,hash_token,
-    create_access_token,
-    create_refresh_token,
-    verify_password,
-    verify_token
-)
+from app.security.passwords import hash_password, verify_password
+from app.security.jwt import create_access_token, create_refresh_token, verify_token
+from app.security.hashing import hash_secret
 from app.auth.models import RefreshToken
 
 from app.merchant.models import Merchant, MerchantStatus
@@ -67,7 +63,7 @@ class AuthService:
         # Step 6: Store hashed refresh token
         refresh_token_record = RefreshToken(
             merchant_id=merchant.merchant_id,
-            token_hash=hash_token(refresh_token),
+            token_hash=hash_secret(refresh_token),
             device_identifier=request.device_identifier,
             expires_at =  expires_at,
         )
@@ -119,7 +115,7 @@ class AuthService:
 
           refresh_token_record = RefreshToken(
                 merchant_id=existing_merchant.merchant_id,
-                token_hash=hash_token(refresh_token),
+                token_hash=hash_secret(refresh_token),
                 device_identifier=request.device_identifier,
                 expires_at =  expires_at,
             )
@@ -139,7 +135,7 @@ class AuthService:
 
         verify_token(token, verify_exp=False)
 
-        token_hash = hash_token(token)
+        token_hash = hash_secret(token)
 
         session = self.auth_repository.get_refresh_token_by_hash(
                  db,
@@ -154,7 +150,7 @@ class AuthService:
     def refresh_token(self, token:str,db:Session,device_identifier: DeviceType):
         verify_token(token)
 
-        token_hash = hash_token(token)
+        token_hash = hash_secret(token)
 
         refresh_token_record = self.auth_repository.get_refresh_token_by_hash(
             db=db,
@@ -189,7 +185,7 @@ class AuthService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Merchant not found.",
             )
-        if merchant.status != MerchantStatus.ACTIVE:
+        if merchant.merchant_status != MerchantStatus.ACTIVE:
               raise HTTPException(
              status_code=status.HTTP_401_UNAUTHORIZED,
            detail="Merchant account is inactive.",
@@ -209,7 +205,7 @@ class AuthService:
 
         refresh_token_record = RefreshToken(
                         merchant_id=merchant.merchant_id,
-                        token_hash=hash_token(new_refresh_token),
+                        token_hash=hash_secret(new_refresh_token),
                         device_identifier=device_identifier,
                         expires_at =  expires_at,
                     )

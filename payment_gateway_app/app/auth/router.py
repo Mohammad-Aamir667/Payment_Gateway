@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.auth.schemas import (
     MerchantSignupRequest,
     MerchantResponse,
-    AuthenticationResponse,MerchantLoginRequest,MessageResponse
+    AuthenticationResponse,MerchantLoginRequest,MessageResponse, DeviceIdentifier
 )
 from app.auth.service import AuthService
 from app.db.session import get_db
@@ -124,14 +124,14 @@ def logout(
         )
 
 @router.post("/refresh", status_code=status.HTTP_200_OK,response_model=MessageResponse) 
-def refresh_token(request: Request, response: Response,  db: Session = Depends(get_db)):
+def refresh_token(request: Request, body: DeviceIdentifier,response: Response,db: Session = Depends(get_db),):
          refresh_token = request.cookies.get("refresh_token")
          if refresh_token is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Refresh token is missing"
             )
-         access_token, new_refresh_token = auth_service.refresh_token(refresh_token, db, request.device_identifier)
+         access_token, new_refresh_token = auth_service.refresh_token(refresh_token, db, body.device_identifier)
          response.set_cookie(
             key="access_token",
             value=access_token,

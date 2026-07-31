@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.auth.security import verify_token
+from app.security.jwt import verify_token
 from app.merchant.repository import MerchantRepository
 from app.merchant.models import MerchantStatus
 from app.merchant.models import Merchant
