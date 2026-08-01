@@ -1,5 +1,8 @@
 from pydantic import BaseModel, Field,ConfigDict
 from datetime import datetime
+from uuid import UUID
+from enum import Enum
+
 class APIKeyCreateRequest(BaseModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -28,3 +31,31 @@ class APIKeyResponse(BaseModel):
     created_at: datetime = Field(
     description="Timestamp when the API key was created."
 )
+class KeyStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    REVOKED = "REVOKED"
+    
+
+class APIKeyMetadataResponse(BaseModel):
+    api_key_id: UUID
+    key_name: str
+    key_status: KeyStatus
+    created_at: datetime
+    revoked_at: datetime | None
+
+
+class APIKeyListResponse(BaseModel):
+    api_keys: list[APIKeyMetadataResponse]    
+
+class APIKeyRevokeRequest(BaseModel):
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+        description="Merchant account password",
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+

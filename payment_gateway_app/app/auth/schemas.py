@@ -12,6 +12,9 @@ class DeviceType(str, Enum):
     PC = "PC"
 
 class MerchantSignupRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
     business_name: str = Field(
         min_length=3,
         max_length=100,
@@ -52,6 +55,9 @@ class AuthenticationResponse(BaseModel):
     )
 
 class MerchantLoginRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
     email: EmailStr
     password: str = Field(
         min_length=8,
