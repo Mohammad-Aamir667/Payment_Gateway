@@ -9,6 +9,8 @@ from app.merchant.models import Merchant
 from app.auth.models import RefreshToken
 from app.merchant_credentials.models import APIKey
 from app.payment_methods.models import PaymentMethod
+from app.merchant_payment_methods.model import MerchantPaymentMethod
+from app.webhook.models import Webhook
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

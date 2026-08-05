@@ -15,9 +15,10 @@ from app.merchant_credentials.schemas import (
 )
 from app.merchant_credentials.repository import APIKeyRepository
 
+from app.security.constants import API_KEY_PREFIX
 from app.security.passwords import verify_password
 from app.security.hashing import hash_secret
-from app.security.api_keys import generate_api_key
+from app.security.secrets import generate_secret
 
 
 class APIKeyService:
@@ -61,7 +62,7 @@ class APIKeyService:
             )
 
         # Step 3: Generate plaintext API key
-        plain_api_key = generate_api_key()
+        plain_api_key = generate_secret(API_KEY_PREFIX)
 
         # Step 4: Hash API key
         api_key_hash = hash_secret(plain_api_key)
