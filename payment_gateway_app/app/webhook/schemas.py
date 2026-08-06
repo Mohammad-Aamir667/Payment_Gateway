@@ -63,7 +63,6 @@ class WebhookUpdateRequest(BaseModel):
 
     event_types: list[WebhookEventType] | None = None
 
-    is_active: bool | None = None
 
     
     password: str = Field(

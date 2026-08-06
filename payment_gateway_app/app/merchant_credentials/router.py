@@ -13,12 +13,11 @@ from app.merchant_credentials.schemas import (
     APIKeyCreateRequest,
     APIKeyMetadataResponse,
     APIKeyResponse,
-    APIKeyRevokeRequest,
 )
 from app.merchant_credentials.service import APIKeyService
 from app.merchant_credentials.repository import APIKeyRepository
 from app.merchant_credentials.schemas import APIKeyListResponse
-
+from app.comman.schemas import PasswordRequest
 router = APIRouter(
     prefix="/api-keys",
     tags=["Merchant API Keys"],
@@ -68,7 +67,7 @@ def get_api_keys(
 )
 def revoke_api_key(
     api_key_id: UUID,
-    request: APIKeyRevokeRequest,
+    request: PasswordRequest,
     merchant: Merchant = Depends(get_current_merchant),
     db: Session = Depends(get_db),
 ):

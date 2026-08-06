@@ -4,13 +4,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import UUID
 from sqlalchemy.orm import Session
 
+from app.comman.schemas import PasswordRequest
 from app.merchant_credentials.models import APIKey
 from app.merchant.models import Merchant
 
 from app.merchant_credentials.schemas import (
     APIKeyCreateRequest,
     APIKeyResponse,APIKeyListResponse,APIKeyMetadataResponse,
-    APIKeyRevokeRequest,
+    
     KeyStatus
 )
 from app.merchant_credentials.repository import APIKeyRepository
@@ -23,7 +24,7 @@ from app.security.secrets import generate_secret
 
 class APIKeyService:
 
-    def __init__(
+    def __init__( 
         self,
         api_key_repository: APIKeyRepository,
     ):
@@ -121,7 +122,7 @@ class APIKeyService:
         self,
         api_key_id: UUID,
         merchant: Merchant,
-        request: APIKeyRevokeRequest,
+        request: PasswordRequest,
         db: Session,
     ) -> APIKeyMetadataResponse:
 

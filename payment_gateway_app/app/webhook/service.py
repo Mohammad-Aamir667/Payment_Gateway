@@ -16,7 +16,7 @@ from app.webhook.schemas import (
 
 from app.security.passwords import verify_password
 from app.security.secrets import generate_secret
-
+from app.comman.schemas import PasswordRequest
 
 class WebhookService:
 
@@ -87,12 +87,12 @@ class WebhookService:
 
 
     def update_webhook(
-        self,
-        merchant: Merchant,
-        webhook_id: UUID,
-        request: WebhookUpdateRequest,
-        db: Session,
-    ) -> WebhookUpdateResponse:
+    self,
+    merchant: Merchant,
+    webhook_id: UUID,
+    request: WebhookUpdateRequest,
+    db: Session,
+) -> WebhookUpdateResponse:
 
         # Verify merchant password
         if not verify_password(
@@ -103,11 +103,17 @@ class WebhookService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect password.",
             )
-        if (request.callback_url is None and request.event_types is None and request.is_active is None):
+
+        # At least one field must be updated
+        if (
+            request.callback_url is None
+            and request.event_types is None
+        ):
             raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="At least one field must be provided for update.",
-    ) 
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one field must be provided for update.",
+            )
+
         # Retrieve webhook
         webhook = self.webhook_repository.get_by_id(
             db=db,
@@ -127,6 +133,16 @@ class WebhookService:
                 detail="Webhook does not belong to the authenticated merchant.",
             )
 
+        # Webhook must be active before updating
+        if not webhook.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Webhook is currently disabled. "
+                    "Please activate the webhook before updating it."
+                ),
+            )
+
         # Update callback URL
         if request.callback_url is not None:
             webhook.callback_url = str(request.callback_url)
@@ -135,12 +151,62 @@ class WebhookService:
         if request.event_types is not None:
             webhook.event_types = request.event_types
 
-        # Update active status
-        if request.is_active is not None:
-            webhook.is_active = request.is_active
-
         db.commit()
         db.refresh(webhook)
+
+        return WebhookUpdateResponse(
+            webhook_id=webhook.webhook_id,
+            callback_url=webhook.callback_url,
+            event_types=webhook.event_types,
+            is_active=webhook.is_active,
+            updated_at=webhook.updated_at,
+        )
+
+
+
+
+    def disable_webhook(
+        self,
+        merchant: Merchant,
+        webhook_id: UUID,
+        request: PasswordRequest,
+        db: Session,
+    ) -> WebhookUpdateResponse:
+
+        # Verify merchant password
+        if not verify_password(
+            request.password,
+            merchant.password_hash,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password.",
+            )
+
+        # Retrieve webhook
+        webhook = self.webhook_repository.get_by_id(
+            db=db,
+            webhook_id=webhook_id,
+        )
+
+        if webhook is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Webhook configuration does not exist.",
+            )
+
+        # Verify ownership
+        if webhook.merchant_id != merchant.merchant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Webhook does not belong to the authenticated merchant.",
+            )
+
+        # Idempotent behaviour
+        if webhook.is_active:
+            webhook.is_active = False
+            db.commit()
+            db.refresh(webhook)
 
         return WebhookUpdateResponse(
             webhook_id=webhook.webhook_id,

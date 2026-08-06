@@ -5,6 +5,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 from uuid import UUID
+from app.comman.schemas import PasswordRequest
 from app.webhook.schemas import (
     WebhookCreateRequest,
     WebhookResponse, WebhookUpdateRequest,
@@ -59,6 +60,26 @@ def update_webhook(
 ) -> WebhookUpdateResponse:
 
     return webhook_service.update_webhook(
+        merchant=merchant,
+        webhook_id=webhook_id,
+        request=request,
+        db=db,
+    )
+
+
+@router.patch(
+    "/{webhook_id}/disable",
+    status_code=status.HTTP_200_OK,
+    response_model=WebhookUpdateResponse,
+)
+def disable_webhook(
+    webhook_id: UUID,
+    request: PasswordRequest,
+    merchant: Merchant = Depends(get_current_merchant),
+    db: Session = Depends(get_db),
+) -> WebhookUpdateResponse:
+
+    return webhook_service.disable_webhook(
         merchant=merchant,
         webhook_id=webhook_id,
         request=request,
