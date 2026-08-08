@@ -1,6 +1,6 @@
 import uuid
-from sqlalchemy import BigInteger, DateTime, Enum as PGEnum, ForeignKey, JSON
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import BigInteger, DateTime, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import UUID, ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -9,9 +9,7 @@ from app.infrastructure.database import Base
 from enum import Enum
 from app.common.enums import PaymentStatus
 from datetime import datetime
-class Currency(str, Enum):
-    INR = "INR"
-
+from app.common.enums import Currency
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -45,12 +43,12 @@ class Payment(Base):
     )
 
     currency: Mapped[Currency] = mapped_column(
-        PGEnum(Currency),
+        PGEnum(Currency, name="currency", create_type=False),
         nullable=False,
     )
 
     status: Mapped[PaymentStatus] = mapped_column(
-        PGEnum(PaymentStatus),
+        PGEnum(PaymentStatus, name="paymentstatus", create_type=False),
         nullable=False,
     )
 

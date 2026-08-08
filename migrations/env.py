@@ -13,6 +13,7 @@ from app.merchant_payment_methods.model import MerchantPaymentMethod
 from app.webhook.models import Webhook
 from app.payment.models import Payment
 from app.payment_history.models import PaymentHistory
+from app.idempotency.models import IdempotencyKey
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

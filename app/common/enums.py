@@ -5,3 +5,7 @@ class PaymentStatus(str, Enum):
     PROCESSING = "PROCESSING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+
+
+class Currency(str, Enum):
+    INR = "INR"
