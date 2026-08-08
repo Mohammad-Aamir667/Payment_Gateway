@@ -86,3 +86,12 @@ class WebhookUpdateResponse(BaseModel):
     event_types: list[WebhookEventType]
     is_active: bool
     updated_at: datetime    
+
+
+class WebhookDetailsResponse(BaseModel):
+    webhook_id: UUID
+    callback_url: str
+    event_types: list[WebhookEventType]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime    

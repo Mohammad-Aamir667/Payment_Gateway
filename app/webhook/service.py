@@ -16,8 +16,8 @@ from app.webhook.schemas import (
 
 from app.security.passwords import verify_password
 from app.security.secrets import generate_secret
-from app.comman.schemas import PasswordRequest
-
+from app.common.schemas import PasswordRequest
+from app.webhook.schemas import WebhookDetailsResponse
 class WebhookService:
 
     def __init__(
@@ -215,3 +215,82 @@ class WebhookService:
             is_active=webhook.is_active,
             updated_at=webhook.updated_at,
         )
+    
+    def enable_webhook(
+    self,
+    merchant: Merchant,
+    webhook_id: UUID,
+    request: PasswordRequest,
+    db: Session,
+) -> WebhookUpdateResponse:
+
+    # Verify merchant password
+        if not verify_password(
+            request.password,
+            merchant.password_hash,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password.",
+            )
+
+        # Retrieve webhook
+        webhook = self.webhook_repository.get_by_id(
+            db=db,
+            webhook_id=webhook_id,
+        )
+
+        if webhook is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Webhook configuration does not exist.",
+            )
+
+        # Verify ownership
+        if webhook.merchant_id != merchant.merchant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Webhook does not belong to the authenticated merchant.",
+            )
+
+        # Idempotent behaviour
+        if not webhook.is_active:
+            webhook.is_active = True
+            db.commit()
+            db.refresh(webhook)
+
+        return WebhookUpdateResponse(
+            webhook_id=webhook.webhook_id,
+            callback_url=webhook.callback_url,
+            event_types=webhook.event_types,
+            is_active=webhook.is_active,
+            updated_at=webhook.updated_at,
+        )
+
+
+
+    def get_webhook(
+    self,
+    merchant: Merchant,
+    db: Session,
+) -> WebhookDetailsResponse:
+
+        webhook = self.webhook_repository.get_by_merchant(
+            db=db,
+            merchant_id=merchant.merchant_id,
+        )
+
+        if webhook is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Webhook configuration does not exist.",
+            )
+
+        return WebhookDetailsResponse(
+            webhook_id=webhook.webhook_id,
+            callback_url=webhook.callback_url,
+            event_types=webhook.event_types,
+            is_active=webhook.is_active,
+            created_at=webhook.created_at,
+            updated_at=webhook.updated_at,
+        )      

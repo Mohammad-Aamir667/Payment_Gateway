@@ -9,7 +9,7 @@ class DeviceType(str, Enum):
     LAPTOP = "LAPTOP"
     PHONE = "PHONE"
     TABLET = "TABLET"
-    PC = "PC"
+    PC = "PC "
 
 class MerchantSignupRequest(BaseModel):
     model_config = ConfigDict(

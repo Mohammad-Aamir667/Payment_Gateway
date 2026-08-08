@@ -15,15 +15,15 @@ from sqlalchemy.dialects.postgresql import (
     ARRAY,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-
 from app.infrastructure.database import Base
-from sqlalchemy import UniqueConstraint
 
+from sqlalchemy import UniqueConstraint
+  
 
 class WebhookEventType(str, Enum):
     PAYMENT = "PAYMENT"
     REFUND = "REFUND"
-
+    
 
 class Webhook(Base):
     __tablename__ = "webhooks"

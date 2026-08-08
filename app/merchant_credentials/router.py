@@ -17,7 +17,7 @@ from app.merchant_credentials.schemas import (
 from app.merchant_credentials.service import APIKeyService
 from app.merchant_credentials.repository import APIKeyRepository
 from app.merchant_credentials.schemas import APIKeyListResponse
-from app.comman.schemas import PasswordRequest
+from app.common.schemas import PasswordRequest
 router = APIRouter(
     prefix="/api-keys",
     tags=["Merchant API Keys"],
