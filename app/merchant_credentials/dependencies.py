@@ -53,5 +53,5 @@ async def get_authenticated_merchant(
         )
 
     stored_key.last_used_at = datetime.now(timezone.utc)
-
+    db.commit()
     return merchant
