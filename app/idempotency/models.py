@@ -25,7 +25,12 @@ class IdempotencyKey(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+    UUID(as_uuid=True),
+    ForeignKey("payments.payment_id"),
+    nullable=False,
+    index=True,
+)
     merchant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("merchant.merchant_id"),

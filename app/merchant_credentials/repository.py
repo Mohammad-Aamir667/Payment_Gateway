@@ -61,3 +61,12 @@ class APIKeyRepository:
     )
 
 
+    def get_by_hash(self,
+        db: Session,
+        api_key_hash: str,
+    ) -> APIKey | None:
+        return (
+            db.query(APIKey)
+            .filter(APIKey.api_key_hash == api_key_hash)
+            .first()
+        )

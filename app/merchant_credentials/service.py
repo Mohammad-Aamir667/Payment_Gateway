@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import UUID
 from sqlalchemy.orm import Session
 
-from app.comman.schemas import PasswordRequest
+from app.common.schemas import PasswordRequest
 from app.merchant_credentials.models import APIKey
 from app.merchant.models import Merchant
 

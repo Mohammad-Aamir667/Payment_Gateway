@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,7 +11,7 @@ class CreatePaymentRequest(BaseModel):
     merchant_payment_method_id: UUID
     amount: int = Field(..., gt=0)
     currency: Currency
-    payment_metadata: dict = Field(default_factory=dict)
+    payment_metadata: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(
         ...,
         min_length=1,
