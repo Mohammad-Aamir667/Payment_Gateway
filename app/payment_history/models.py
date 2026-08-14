@@ -29,7 +29,7 @@ class PaymentHistory(Base):
 
     old_state: Mapped[PaymentStatus] = mapped_column(
         Enum(PaymentStatus),
-        nullable=False,
+        nullable=True,
     )
 
     new_state: Mapped[PaymentStatus] = mapped_column(
