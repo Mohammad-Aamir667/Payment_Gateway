@@ -57,3 +57,20 @@ class MerchantPaymentMethodRepository:
             )
             .all()
         )
+
+    @staticmethod
+    def get_by_id_for_merchant(
+        db: Session,
+        merchant_payment_method_id: UUID,
+        merchant_id: UUID,
+    ) -> MerchantPaymentMethod | None:
+        return (
+            db.query(MerchantPaymentMethod)
+            .filter(
+                MerchantPaymentMethod.merchant_payment_method_id
+                == merchant_payment_method_id,
+                MerchantPaymentMethod.merchant_id
+                == merchant_id,
+            )
+            .first()
+        )

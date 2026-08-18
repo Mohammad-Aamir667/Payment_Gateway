@@ -1,31 +1,37 @@
-from datetime import datetime, timezone
-from uuid import uuid4
-
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
 
-from app.common.enums import PaymentStatus
+from app.db.session import get_db
 from app.merchant_credentials.dependencies import get_authenticated_merchant
+from app.merchant.models import Merchant
+
 from app.payment.schemas import (
     CreatePaymentRequest,
     CreatePaymentResponse,
 )
+from app.payment.service import PaymentService
+
 
 router = APIRouter(
-    prefix="/payments",
+    prefix="/api/v1/payments",
     tags=["Payments"],
 )
 
 
 @router.post(
     "",
-    status_code=status.HTTP_201_CREATED,
     response_model=CreatePaymentResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def create_payment(
-    request: CreatePaymentRequest,api_key: str = Depends(get_authenticated_merchant),
+def create_payment(
+    request: CreatePaymentRequest,
+    merchant: Merchant = Depends(get_authenticated_merchant),
+    db: Session = Depends(get_db),
 ) -> CreatePaymentResponse:
-    return CreatePaymentResponse(
-        payment_id=uuid4(),
-        status=PaymentStatus.PROCESSING,
-        created_at=datetime.now(timezone.utc),
+
+    payment_service = PaymentService()
+    return payment_service.create_payment(
+        db=db,
+        merchant_id=merchant.merchant_id,
+        request=request,
     )
