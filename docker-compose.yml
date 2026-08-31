@@ -20,5 +20,26 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+
+  psp-postgres:
+    image: postgres:17
+
+    container_name: simulated_psp_postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: simulated_psp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - psp_postgres_data:/var/lib/postgresql/data
+
+
 volumes:
   postgres_data:
+  psp_postgres_data:

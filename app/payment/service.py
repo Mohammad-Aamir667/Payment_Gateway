@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.common.enums import PaymentStatus
+from app.payment.providers.factory import PaymentProviderFactory
 from app.security.hashing import generate_request_hash
 
 from app.payment.models import Payment
@@ -224,11 +225,110 @@ class PaymentService:
         # 9. Commit entire payment transaction
         # ---------------------------------------------------------
 
+        
+        db.commit()
+
+        
+        return response
+
+    def process_payment(self,
+        db: Session,
+        payment_id: UUID,
+    ) -> Payment:
+
+        # 1. Retrieve payment
+        payment = PaymentRepository.get_by_id(
+            db=db,
+            payment_id=payment_id,
+        )
+
+        if payment is None:
+            raise ValueError("Payment not found.")
+
+        # 2. Payment must still be processable
+        if payment.status != PaymentStatus.PROCESSING:
+            return payment
+
+        # 3. Retrieve merchant payment method
+        merchant_payment_method = (
+            MerchantPaymentMethodRepository.get_by_id_for_merchant(
+                db=db,
+                merchant_payment_method_id=(
+                    payment.merchant_payment_method_id
+                ),
+                merchant_id=payment.merchant_id,
+            )
+        )
+
+        if merchant_payment_method is None:
+            raise ValueError("Merchant payment method not found.")
+
+        # 4. Retrieve gateway payment method
+        payment_method = self.payment_method_repository.get_by_id(
+            db=db,
+            payment_method_id=merchant_payment_method.payment_method_id,
+        )
+
+        if payment_method is None:
+            raise ValueError("Payment method not found.")
+
+        # 5. Select provider
+        provider = PaymentProviderFactory.get_provider(
+            payment_method.code
+        )
+
+        # 6. Call external PSP
+        provider_result = provider.initiate_payment(
+            payment_id=payment.payment_id,
+            amount=payment.amount,
+            currency=payment.currency,
+            payment_method=payment_method.code,
+            payment_metadata=payment.payment_metadata,
+        )
+
+        provider_status = provider_result["status"]
+
+        # 7. Timeout / uncertain result
+        if provider_status == "PROCESSING":
+            return payment
+
+        # 8. Map provider result to gateway status
+        if provider_status == "SUCCESS":
+            new_status = PaymentStatus.SUCCESS
+
+        elif provider_status == "FAILED":
+            new_status = PaymentStatus.FAILED
+
+        else:
+            raise ValueError(
+                f"Unknown provider status: {provider_status}"
+            )
+
+        # 9. Atomic gateway status transition
         try:
+            PaymentRepository.update_status(
+                db=db,
+                payment=payment,
+                status=new_status,
+            )
+
+            history = PaymentHistory(
+                payment_id=payment.payment_id,
+                old_state=PaymentStatus.PROCESSING,
+                new_state=new_status,
+            )
+
+            PaymentHistoryRepository.create(
+                db=db,
+                history=history,
+            )
+
             db.commit()
 
-        except IntegrityError:
+        except Exception:
             db.rollback()
             raise
 
-        return response
+        return payment
+
+      

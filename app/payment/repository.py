@@ -28,3 +28,10 @@ class PaymentRepository:
         db.flush()
 
         return payment
+    @staticmethod
+    def get_by_id(db:Session,payment_id:UUID)->Payment|None:
+        return (
+            db.query(Payment)
+            .filter(Payment.payment_id==payment_id)
+            .first()
+        )

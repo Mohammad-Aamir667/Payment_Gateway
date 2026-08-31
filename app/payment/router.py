@@ -30,8 +30,13 @@ def create_payment(
 ) -> CreatePaymentResponse:
 
     payment_service = PaymentService()
-    return payment_service.create_payment(
+    response = payment_service.create_payment(
         db=db,
         merchant_id=merchant.merchant_id,
         request=request,
     )
+    payment = payment_service.process_payment(
+        db=db,payment_id=response.payment_id
+    )
+    print(f"Payment processed: {payment.payment_id}, Status: {payment.status}")
+    return response
