@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import BigInteger, DateTime, ForeignKey, JSON
+from sqlalchemy import BigInteger, DateTime, ForeignKey, JSON, String
 from sqlalchemy.dialects.postgresql import UUID, ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -51,6 +51,12 @@ class Payment(Base):
         PGEnum(PaymentStatus, name="paymentstatus", create_type=False),
         nullable=False,
     )
+    provider_payment_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
+
 
     payment_metadata: Mapped[dict] = mapped_column(
         JSON,
