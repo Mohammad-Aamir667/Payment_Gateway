@@ -39,7 +39,19 @@ services:
     volumes:
       - psp_postgres_data:/var/lib/postgresql/data
 
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: payment_gateway_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+
 
 volumes:
   postgres_data:
   psp_postgres_data:
+  rabbitmq_data:
