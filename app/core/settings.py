@@ -9,8 +9,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
     DATABASE_URL:str
+    PSP_BASE_URL: str
+    RABBITMQ_HOST: str
+    RABBITMQ_PORT: int
 
-    model_config = SettingsConfigDict(
+    model_config = SettingsConfigDict( 
         env_file=".env",
         extra="ignore",
     )
