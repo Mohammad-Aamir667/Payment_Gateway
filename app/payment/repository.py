@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.payment.models import Payment
 from app.common.enums import PaymentStatus
-
-
+from app.payment.models import Payment 
+from app.payment.models import Payment 
 class PaymentRepository:
 
     @staticmethod
@@ -15,7 +15,6 @@ class PaymentRepository:
     ) -> Payment:
         db.add(payment)
         db.flush()
-
         return payment
 
     @staticmethod
@@ -26,7 +25,6 @@ class PaymentRepository:
     ) -> Payment:
         payment.status = status
         db.flush()
-
         return payment
     @staticmethod
     def get_by_id(db:Session,payment_id:UUID)->Payment|None:
