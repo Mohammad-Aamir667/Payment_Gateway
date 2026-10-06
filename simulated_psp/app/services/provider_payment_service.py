@@ -1,5 +1,6 @@
 from decimal import Decimal
 import asyncio
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.provider_payment import PaymentStatus, ProviderPayment
@@ -77,7 +78,43 @@ class ProviderPaymentService:
             )
 
         return self._to_response(payment)
+
+
     
+    async def get_payment(
+        self,
+        provider_payment_id: str,
+    ) -> dict:
+
+        payment = self.repository.get_by_provider_payment_id(
+            provider_payment_id
+        )
+
+        if not payment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider payment not found."
+            )
+
+        return self._to_response(payment)
+
+    async def get_payment_by_gateway_id(
+        self,
+        gateway_payment_id: str,
+    ) -> dict:
+
+        payment = self.repository.get_by_gateway_payment_id(
+            gateway_payment_id
+        )
+
+        if not payment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider payment not found."
+            )
+
+        return self._to_response(payment)
+            
     @staticmethod
     def _to_response(payment: ProviderPayment) -> dict:
         return {
