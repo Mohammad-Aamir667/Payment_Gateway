@@ -39,13 +39,13 @@ async def create_payment(
     "/by-gateway/{gateway_payment_id}",
     response_model=ProviderPaymentResponse,
 )
-def get_payment_by_gateway_id(
+async def get_payment_by_gateway_id(
     gateway_payment_id: str,
     db: Session = Depends(get_db),
 ):
     service = ProviderPaymentService(db)
 
-    payment = service.get_payment_by_gateway_id(
+    payment =await service.get_payment_by_gateway_id(
         gateway_payment_id
     )
 
@@ -62,18 +62,18 @@ def get_payment_by_gateway_id(
     "/{provider_payment_id}",
     response_model=ProviderPaymentResponse,
 )
-def get_payment(
+async def get_payment(
     provider_payment_id: str,
     db: Session = Depends(get_db),
 ):
     service = ProviderPaymentService(db)
 
-    payment = service.get_payment(
+    payment =await service.get_payment(
         provider_payment_id
     )
 
     if payment is None:
-        raise HTTPException(
+        HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Provider payment not found.",
         )
