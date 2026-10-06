@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.merchant_credentials.dependencies import get_authenticated_merchant
 from app.merchant.models import Merchant
-
+from app.rabbitmq.publisher import publish_payment_processing
 from app.payment.schemas import (
     CreatePaymentRequest,
     CreatePaymentResponse,
@@ -30,13 +30,16 @@ def create_payment(
 ) -> CreatePaymentResponse:
 
     payment_service = PaymentService()
-    response = payment_service.create_payment(
+    result = payment_service.create_payment(
         db=db,
         merchant_id=merchant.merchant_id,
         request=request,
     )
-    payment = payment_service.process_payment(
-        db=db,payment_id=response.payment_id
-    )
-    print(f"Payment processed: {payment.payment_id}, Status: {payment.status}")
-    return response
+    if result.should_process:
+        publish_payment_processing(
+            payment_id=result.response.payment_id,
+        )
+
+
+
+    return result.response
