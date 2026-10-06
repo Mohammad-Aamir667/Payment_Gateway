@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     PSP_BASE_URL: str
     RABBITMQ_HOST: str
     RABBITMQ_PORT: int
+    RABBITMQ_USERNAME: str
+    RABBITMQ_PASSWORD: str
 
     model_config = SettingsConfigDict( 
         env_file=".env",
