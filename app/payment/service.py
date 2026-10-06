@@ -1,11 +1,14 @@
+from dataclasses import dataclass
 import time
+from urllib import response
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
+from app.payment.models import Payment 
 from app.common.enums import PaymentStatus
+from app.payment.exceptions import ProviderCommunicationError
 from app.payment.providers.factory import PaymentProviderFactory
 from app.security.hashing import generate_request_hash
 
@@ -22,11 +25,19 @@ from app.payment_methods.repository import PaymentMethodRepository
 from app.merchant_payment_methods.repository import (
     MerchantPaymentMethodRepository,
 )
+from app.payment.provider import ProviderPaymentStatus
 
 from app.payment.schemas import (
     CreatePaymentRequest,
     CreatePaymentResponse,
 )
+from dataclasses import dataclass
+
+@dataclass
+class CreatePaymentResult:
+    response: CreatePaymentResponse
+    should_process: bool
+
 class PaymentService:
     def __init__(self):
         self.payment_method_repository = PaymentMethodRepository()
@@ -35,7 +46,7 @@ class PaymentService:
         db: Session,
         merchant_id: UUID,
         request: CreatePaymentRequest,
-    ) -> CreatePaymentResponse:
+    ) -> CreatePaymentResult:
 
         # ---------------------------------------------------------
         # 1. Generate request hash
@@ -76,9 +87,12 @@ class PaymentService:
                 )
 
             # Same key, same request
-            return CreatePaymentResponse(
-                **existing_record.response_snapshot
-            )
+            return CreatePaymentResult(
+                response=CreatePaymentResponse(
+                    **existing_record.response_snapshot
+                ),
+                should_process=False,
+        )
 
         # ---------------------------------------------------------
         # 3. Validate Merchant Payment Method
@@ -218,8 +232,11 @@ class PaymentService:
                     ),
                 )
 
-            return CreatePaymentResponse(
-                **existing_record.response_snapshot
+            return CreatePaymentResult(
+                response=CreatePaymentResponse(
+                    **existing_record.response_snapshot
+                ),
+                should_process=False,
             )
         # ---------------------------------------------------------
         # 9. Commit entire payment transaction
@@ -227,10 +244,14 @@ class PaymentService:
 
         
         db.commit()
-
+        # return response
         
-        return response
-
+        return CreatePaymentResult(
+        response=response,
+        should_process=True,
+    )
+        
+       
     def process_payment(self,
         db: Session,
         payment_id: UUID,
@@ -241,7 +262,6 @@ class PaymentService:
             db=db,
             payment_id=payment_id,
         )
-
         if payment is None:
             raise ValueError("Payment not found.")
 
@@ -277,33 +297,72 @@ class PaymentService:
             payment_method.code
         )
 
-        # 6. Call external PSP
-        provider_result = provider.initiate_payment(
-            payment_id=payment.payment_id,
-            amount=payment.amount,
-            currency=payment.currency,
-            payment_method=payment_method.code,
-            payment_metadata=payment.payment_metadata,
-        )
+        # 6. Determine whether a provider-side payment already exists
 
-        provider_status = provider_result["status"]
+        # 6. Determine the provider result
+        try:
+            if payment.provider_payment_id is not None:
+                # Provider payment already known.
+                # Retrieve its current status.
+                provider_result = provider.get_payment_status(
+                    provider_payment_id=payment.provider_payment_id,
+                )
 
-        # 7. Timeout / uncertain result
-        if provider_status == "PROCESSING":
-            return payment
+            else:
+                # We don't know the provider payment ID.
+                # First check whether PSP already created a payment.
+                existing_provider_payment = (
+                    provider.find_payment_by_gateway_id(
+                        gateway_payment_id=payment.payment_id,
+                    )
+                )
 
-        # 8. Map provider result to gateway status
-        if provider_status == "SUCCESS":
-            new_status = PaymentStatus.SUCCESS
-
-        elif provider_status == "FAILED":
-            new_status = PaymentStatus.FAILED
-
+                if existing_provider_payment is not None:
+                    # PSP payment already exists, so retrieve its current status.
+                    provider_result = existing_provider_payment
+                else:
+                   
+                    provider_result = provider.initiate_payment(
+                                    payment_id=payment.payment_id,
+                                    amount=payment.amount,
+                                    currency=payment.currency,
+                                    payment_method=payment_method.code,
+                                    payment_metadata=payment.payment_metadata,
+                                )
+                    
+        except ProviderCommunicationError:
+            db.rollback()
+            raise
+                    
+                    
+        print(f"Provider result: {provider_result}")                   
+                
+                        # Persist the PSP's external payment reference whenever provided.
+        if provider_result.provider_payment_id is not None and payment.provider_payment_id is None:
+            payment.provider_payment_id = (
+                                            provider_result.provider_payment_id
+                         )
+        #  we can safely commit the payment here as the status is still Processing and payment history already exists for this status. This ensures that the provider_payment_id is persisted in the database before we proceed to update the payment status based on the provider's response. the life cycle of payment history is already handled in the previous steps, so we don't need to create a new payment history entry for this update. The payment history will only be updated when the status changes from Processing to either Success or Failed, which will be handled in the next steps.
+        if provider_result.status == ProviderPaymentStatus.PROCESSING and payment.provider_payment_id is not None:
+                                        db.commit()
+                                        return payment
+                            
+        if provider_result.status == ProviderPaymentStatus.SUCCESS:
+                                        new_status = PaymentStatus.SUCCESS
+                            
+        elif provider_result.status == ProviderPaymentStatus.FAILED:
+                                        new_status = PaymentStatus.FAILED
+                            
         else:
             raise ValueError(
-                f"Unknown provider status: {provider_status}"
-            )
-
+                          f"Unknown provider status: {provider_result.status}"
+                   )
+                
+                # No provider-side payment exists, so this is the
+                # point where initiating a new payment is appropriate.
+               
+               # 6. Call external PSP
+       
         # 9. Atomic gateway status transition
         try:
             PaymentRepository.update_status(
@@ -324,8 +383,10 @@ class PaymentService:
             )
 
             db.commit()
-
-        except Exception:
+            db.refresh(payment)
+        except Exception as e:
+            print(f"Error updating payment {payment.payment_id} status to {new_status}")
+            print(f"Error details: {e}")
             db.rollback()
             raise
 
