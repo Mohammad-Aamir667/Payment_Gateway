@@ -7,10 +7,12 @@ from app.rabbitmq.topology import (
     PROCESS_PAYMENT_QUEUE,
     declare_topology,
 )
-from app.workers.payment_worker import process_payment_job
+from app.workers.payment_worker import PaymentJobResult, process_payment_job
 
 
 def callback(channel, method, properties, body):
+
+    payment_id = None
 
     try:
         message = json.loads(body)
@@ -20,40 +22,50 @@ def callback(channel, method, properties, body):
         print(
             f"Received payment processing job: {payment_id}"
         )
-        process_payment_job(payment_id)
-        
-        # ACK only after the worker successfully completes.
-        channel.basic_ack(
-            delivery_tag=method.delivery_tag
-        )
 
-        print(
-            f"Payment processing job completed: {payment_id}"
-        )
+        result = process_payment_job(payment_id)
 
-    except ProviderCommunicationError:
+        if result == PaymentJobResult.COMPLETED:
 
-        print(
-            "Provider communication failed. "
-            "Requeueing message."
-        )
+            channel.basic_ack(
+                delivery_tag=method.delivery_tag
+            )
 
-        channel.basic_nack(
-            delivery_tag=method.delivery_tag,
-            requeue=True,
-        )
+            print(
+                f"ACK: payment job completed: {payment_id}"
+            )
 
+        elif result == PaymentJobResult.RETRY:
+
+            channel.basic_nack(
+                delivery_tag=method.delivery_tag,
+                requeue=True,
+            )
+
+            print(
+                f"REQUEUE: payment job will be retried: {payment_id}"
+            )
+
+        elif result == PaymentJobResult.DISCARD:
+
+            channel.basic_ack(
+                delivery_tag=method.delivery_tag
+            )
+
+            print(
+                f"DISCARD: payment job is not retryable: {payment_id}"
+            )
     except Exception as exc:
 
         print(
-            f"Unexpected worker error: {exc}"
+            f"Unexpected consumer error for payment "
+            f"{payment_id}: {exc}"
         )
 
-        # For now, don't endlessly redeliver malformed/
-        # programming-error messages.
-        channel.basic_nack(
-            delivery_tag=method.delivery_tag,
-            requeue=False,
+        # Temporary policy:
+        # don't let an unexpected exception kill the consumer.
+        channel.basic_ack(
+            delivery_tag=method.delivery_tag
         )
 
 
@@ -85,14 +97,19 @@ def start_consumer():
         )
 
         channel.start_consuming()
-
+    
     except KeyboardInterrupt:
 
         print("Stopping consumer...")
 
+    except Exception as exc:
+        print(
+            f"Consumer failed: {exc}"
+        )
+
     finally:
-        connection.close()
-
-
+        if connection is not None and connection.is_open:
+            connection.close()
+            
 if __name__ == "__main__":
     start_consumer()
