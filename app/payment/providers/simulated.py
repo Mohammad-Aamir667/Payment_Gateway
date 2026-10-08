@@ -170,8 +170,16 @@ class SimulatedPaymentServiceProvider(PaymentServiceProvider):
 
     @staticmethod
     def _to_provider_result(data: dict) -> ProviderPaymentResult:
+        raw_status = data.get("status")
+
+        try:
+            status = ProviderPaymentStatus(raw_status)
+        except (ValueError, TypeError):
+            status = ProviderPaymentStatus.UNKNOWN
+
         return ProviderPaymentResult(
-            status=ProviderPaymentStatus(data["status"]),
+            status=status,
             provider_payment_id=data.get("provider_payment_id"),
             failure_reason=data.get("failure_reason"),
+            raw_status=raw_status,
         )
