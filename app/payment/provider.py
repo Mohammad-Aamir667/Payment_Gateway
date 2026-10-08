@@ -11,6 +11,7 @@ class ProviderPaymentStatus(str, Enum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     PROCESSING = "PROCESSING"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass
@@ -18,6 +19,7 @@ class ProviderPaymentResult:
     status: ProviderPaymentStatus
     provider_payment_id: str | None = None
     failure_reason: str | None = None
+    raw_status: str | None = None
 
 class PaymentServiceProvider(ABC):
 
