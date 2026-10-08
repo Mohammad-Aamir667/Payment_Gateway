@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.payment.models import Payment 
 from app.common.enums import PaymentStatus
-from app.payment.exceptions import ProviderCommunicationError
+from app.payment.exceptions import MerchantPaymentMethodNotFoundError, PaymentMethodNotFoundError, PaymentNotFoundError, ProviderCommunicationError, UnknownProviderStatusError
 from app.payment.providers.factory import PaymentProviderFactory
 from app.security.hashing import generate_request_hash
 
@@ -263,7 +263,9 @@ class PaymentService:
             payment_id=payment_id,
         )
         if payment is None:
-            raise ValueError("Payment not found.")
+            raise PaymentNotFoundError(
+        f"Payment {payment_id} not found."
+    )
 
         # 2. Payment must still be processable
         if payment.status != PaymentStatus.PROCESSING:
@@ -281,8 +283,9 @@ class PaymentService:
         )
 
         if merchant_payment_method is None:
-            raise ValueError("Merchant payment method not found.")
-
+            raise MerchantPaymentMethodNotFoundError(
+        f"Merchant payment method not found for payment {payment_id}."
+    )
         # 4. Retrieve gateway payment method
         payment_method = self.payment_method_repository.get_by_id(
             db=db,
@@ -290,8 +293,9 @@ class PaymentService:
         )
 
         if payment_method is None:
-            raise ValueError("Payment method not found.")
-
+            raise PaymentMethodNotFoundError(
+        f"Payment method not found for payment {payment_id}."
+    )
         # 5. Select provider
         provider = PaymentProviderFactory.get_provider(
             payment_method.code
@@ -333,10 +337,7 @@ class PaymentService:
         except ProviderCommunicationError:
             db.rollback()
             raise
-                    
-                    
-        print(f"Provider result: {provider_result}")                   
-                
+                            
                         # Persist the PSP's external payment reference whenever provided.
         if provider_result.provider_payment_id is not None and payment.provider_payment_id is None:
             payment.provider_payment_id = (
@@ -348,15 +349,15 @@ class PaymentService:
                                         return payment
                             
         if provider_result.status == ProviderPaymentStatus.SUCCESS:
-                                        new_status = PaymentStatus.SUCCESS
+            new_status = PaymentStatus.SUCCESS
                             
         elif provider_result.status == ProviderPaymentStatus.FAILED:
-                                        new_status = PaymentStatus.FAILED
+            new_status = PaymentStatus.FAILED
                             
         else:
-            raise ValueError(
-                          f"Unknown provider status: {provider_result.status}"
-                   )
+            raise UnknownProviderStatusError(
+        f"Unknown provider status: {provider_result.status}"
+    )
                 
                 # No provider-side payment exists, so this is the
                 # point where initiating a new payment is appropriate.
@@ -385,8 +386,7 @@ class PaymentService:
             db.commit()
             db.refresh(payment)
         except Exception as e:
-            print(f"Error updating payment {payment.payment_id} status to {new_status}")
-            print(f"Error details: {e}")
+            print(f"Error updating payment status for {payment_id}: {e}")
             db.rollback()
             raise
 
