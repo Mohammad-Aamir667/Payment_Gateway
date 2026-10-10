@@ -518,3 +518,89 @@ failure until core application-level reliability is tested.
   DLQ                                            Queue for messages routed aside by
                                                  dead-letter policy
   ----------------------------------------------------------------------------------
+
+
+---
+
+## 17. Payment worker result: what the consumer is expected to do
+
+The function `process_payment_job(payment_id)` is the boundary between payment-processing logic and RabbitMQ message handling. It converts the outcome of `PaymentService.process_payment(...)` into one of three explicit results:
+
+- `COMPLETED`
+- `RETRY`
+- `DISCARD`
+
+The worker returns a result; the RabbitMQ consumer interprets that result and decides what to do with the delivery. In particular, the worker does not ACK or NACK the RabbitMQ message itself.
+
+### `COMPLETED`: acknowledge the delivery
+
+If `PaymentService.process_payment(...)` returns normally, the worker returns `PaymentJobResult.COMPLETED`.
+
+This means the processing function finished without raising one of the exceptions it handles. The consumer should ACK the delivery so RabbitMQ can remove that message from the queue.
+
+`COMPLETED` does **not** necessarily mean the payment became `SUCCESS`. For example, `process_payment()` may safely return when it finds that the payment is already in a terminal state, or it may have saved a provider result of `PROCESSING`. The result means the job was handled according to the current service logic—not that the payment itself succeeded.
+
+### `RETRY`: ask RabbitMQ to redeliver later
+
+The worker returns `PaymentJobResult.RETRY` for these handled exception types:
+
+- `ProviderCommunicationError`
+- SQLAlchemy `OperationalError`
+
+The reasoning is that the worker could not safely finish the job because of a provider communication problem or a database operational problem. A provider timeout or lost response is not proof that the payment failed; the PSP might already have created or processed the provider-side transaction. The next attempt must use the existing recovery logic—check a known provider payment ID, or look up the provider payment using the gateway payment ID—rather than blindly initiating a second payment.
+
+The consumer interprets `RETRY` as a request to retry the job. In the current simple implementation, that may mean calling `basic_nack(..., requeue=True)`. This immediately asks RabbitMQ to requeue the delivery; it is not yet a bounded retry policy and does not itself provide backoff. Bounded retries, backoff, and a dead-letter queue are deferred for later.
+
+### `DISCARD`: remove the job under the current temporary policy
+
+The worker returns `PaymentJobResult.DISCARD` for the explicitly classified non-retryable errors:
+
+- `PaymentNotFoundError`
+- `MerchantPaymentMethodNotFoundError`
+- `PaymentMethodNotFoundError`
+- `UnknownProviderStatusError`
+
+These indicate that the job cannot currently be processed through the ordinary retry path—for example, the referenced payment or required payment-method record is missing, or the provider returned a status the gateway does not recognize.
+
+For now, `DISCARD` means **do not requeue this message**. The consumer can ACK it, which removes it from the active queue. It does **not** currently mean that the message is sent to a dead-letter queue. A DLQ and a policy for inspecting/replaying discarded jobs have not been implemented yet, so this is a deliberate temporary policy, not a complete production recovery mechanism.
+
+Discarding a job also does not mean the payment is `FAILED`. It is a message-handling decision, separate from the payment's business status. In particular, an unknown provider status should not be silently converted into payment failure.
+
+### The final `except Exception` block: unexpected errors
+
+The worker also has a final broad `except Exception` block. It catches errors not covered by the earlier, more specific exception groups—including an unexpected exception that escapes from the provider adapter or payment service.
+
+That block currently:
+
+1. logs the unexpected error;
+2. rolls back the SQLAlchemy session;
+3. returns `PaymentJobResult.DISCARD`.
+
+The rollback protects against leaving the current database transaction open with uncommitted changes. It does not undo external effects that may already have happened at the PSP.
+
+An important consequence: **with this final block present, unexpected exceptions do not propagate to the RabbitMQ consumer.** The consumer only receives `DISCARD`, so it cannot inspect the original exception type and choose a different action based on it. The worker has already made that decision.
+
+This means the comment saying that unexpected errors are left for the consumer to handle does not match the current implementation. There are two possible designs:
+
+- **Current design:** catch unexpected exceptions in the worker, log and roll back, then return `DISCARD`. The consumer ACKs/removes the message under the current policy.
+- **Alternative design:** after logging and rolling back, re-raise the unexpected exception (or let it propagate). The consumer can then apply its own exception-classification policy.
+
+For the current learning-project policy, the first design is what the code implements. It keeps an unexpected job-level exception from escaping the worker function, but it also means the job is discarded rather than retried. Later, once bounded retries and a DLQ are implemented, the policy can be made more deliberate. Avoid blindly retrying every unexpected exception: a programming bug can fail repeatedly, while an unexpected provider exception may leave the provider-side payment outcome uncertain and require reconciliation.
+
+### Worker result versus RabbitMQ action
+
+| Worker outcome | Meaning in current design | Consumer action |
+|---|---|---|
+| `COMPLETED` | Processing returned normally | ACK |
+| `RETRY` | Known provider communication or DB operational error | NACK with `requeue=True` for now |
+| `DISCARD` from a known non-retryable error | Job will not be retried under current policy | ACK/remove from active queue; no DLQ yet |
+| `DISCARD` from the broad `except Exception` block | Unexpected exception was logged and rolled back inside the worker | ACK/remove from active queue; exception does not reach consumer |
+
+Remember the separation of responsibilities:
+
+- **Payment service:** implements payment business and recovery semantics.
+- **Worker function:** classifies handled outcomes into `COMPLETED`, `RETRY`, or `DISCARD`.
+- **RabbitMQ consumer:** maps the result to ACK/NACK behavior.
+- **Future retry/DLQ policy:** will determine how retries are delayed, bounded, and eventually routed for investigation.
+
+This separation is useful in interviews because ACK/NACK is about message delivery, while `SUCCESS`, `FAILED`, and `PROCESSING` are payment business states.
