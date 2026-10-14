@@ -2,10 +2,11 @@ from dataclasses import dataclass
 import time
 from urllib import response
 from uuid import UUID
-
+import logging
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.outbox.service import OutboxService
 from app.payment.models import Payment 
 from app.common.enums import PaymentStatus
 from app.payment.exceptions import MerchantPaymentMethodNotFoundError, PaymentMethodNotFoundError, PaymentNotFoundError, ProviderCommunicationError, UnknownProviderStatusError
@@ -26,6 +27,7 @@ from app.merchant_payment_methods.repository import (
     MerchantPaymentMethodRepository,
 )
 from app.payment.provider import ProviderPaymentStatus
+logger = logging.getLogger(__name__)
 
 from app.payment.schemas import (
     CreatePaymentRequest,
@@ -41,7 +43,6 @@ class CreatePaymentResult:
 class PaymentService:
     def __init__(self):
         self.payment_method_repository = PaymentMethodRepository()
-   
     def create_payment(self,
         db: Session,
         merchant_id: UUID,
@@ -51,205 +52,229 @@ class PaymentService:
         # ---------------------------------------------------------
         # 1. Generate request hash
         # ---------------------------------------------------------
-
-        request_for_hash = {
-            "merchant_payment_method_id": str(
-                request.merchant_payment_method_id
-            ),
-            "amount": request.amount,
-            "currency": request.currency.value,
-            "payment_metadata": request.payment_metadata,
-        }
-
-        request_hash = generate_request_hash(request_for_hash)
-
-        # ---------------------------------------------------------
-        # 2. Check existing idempotency record
-        # ---------------------------------------------------------
-
-        existing_record = IdempotencyKeyRepository.get_by_key(
-            db=db,
-            merchant_id=merchant_id,
-            idempotency_key=request.idempotency_key,
-        )
-
-
-        if existing_record:
-
-            # Same key, different request
-            if existing_record.request_hash != request_hash:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Idempotency key has already been used "
-                        "for a different request."
-                    ),
-                )
-
-            # Same key, same request
-            return CreatePaymentResult(
-                response=CreatePaymentResponse(
-                    **existing_record.response_snapshot
-                ),
-                should_process=False,
-        )
-
-        # ---------------------------------------------------------
-        # 3. Validate Merchant Payment Method
-        # ---------------------------------------------------------
-
-        merchant_payment_method = (
-            MerchantPaymentMethodRepository.get_by_id_for_merchant(
-                db=db,
-                merchant_payment_method_id=(
+        try:
+            request_for_hash = {
+                "merchant_payment_method_id": str(
                     request.merchant_payment_method_id
                 ),
-                merchant_id=merchant_id,
-            )
-        )
+                "amount": request.amount,
+                "currency": request.currency.value,
+                "payment_metadata": request.payment_metadata,
+            }
 
-        if merchant_payment_method is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant payment method not found.",
-            )
+            request_hash = generate_request_hash(request_for_hash)
 
-        if not merchant_payment_method.is_enabled:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Merchant payment method is disabled.",
-            )
-
-        # ---------------------------------------------------------
-        # 4. Retrieve Gateway Payment Method
-        # ---------------------------------------------------------
-
-        payment_method = self.payment_method_repository.get_by_id(
-            db=db,
-            payment_method_id=merchant_payment_method.payment_method_id,
-        )
-
-        if payment_method is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment method not found.",
-            )
-
-        if not payment_method.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Payment method is inactive.",
-            )
-
-        # ---------------------------------------------------------
-        # 5. Create Payment
-        # ---------------------------------------------------------
-
-        payment = Payment(
-            merchant_id=merchant_id,
-            merchant_payment_method_id=(
-                request.merchant_payment_method_id
-            ),
-            amount=request.amount,
-            currency=request.currency,
-            status=PaymentStatus.PROCESSING,
-            payment_metadata=request.payment_metadata,
-        )
-
-        PaymentRepository.create(
-            db=db,
-            payment=payment,
-        )
-
-        # ---------------------------------------------------------
-        # 6. Create Initial Payment History
-        # ---------------------------------------------------------
-
-        payment_history = PaymentHistory(
-            payment_id=payment.payment_id,
-            old_state=None,
-            new_state=PaymentStatus.PROCESSING,
-        )
-
-        PaymentHistoryRepository.create(
-            db=db,
-            history=payment_history,
-        )
-
-        # ---------------------------------------------------------
-        # 7. Build response
-        # ---------------------------------------------------------
-
-        response = CreatePaymentResponse(
-            payment_id=payment.payment_id,
-            status=payment.status,
-            created_at=payment.created_at,
-        )
-
-        # ---------------------------------------------------------
-        # 8. Create Idempotency Record
-        # ---------------------------------------------------------
-
-        idempotency_record = IdempotencyKey(
-            merchant_id=merchant_id,
-            payment_id=payment.payment_id,
-            idempotency_key=request.idempotency_key,
-            request_hash=request_hash,
-            response_snapshot=response.model_dump(mode="json"),
-        )
-        # Handle potential race condition where two requests with the same idempotency key are processed concurrently.
-        try:
-            IdempotencyKeyRepository.create(
-                db=db,
-                idempotency_record=idempotency_record,
-            )
-
-        except IntegrityError as exc:
-
-            constraint_name = exc.orig.diag.constraint_name
-            print(f"IntegrityError: {exc.orig}, Constraint: {constraint_name}")
-            if constraint_name != "uq_merchant_idempotency_key":
-                raise
-
-            db.rollback()
+            # ---------------------------------------------------------
+            # 2. Check existing idempotency record
+            # ---------------------------------------------------------
 
             existing_record = IdempotencyKeyRepository.get_by_key(
                 db=db,
-                merchant_id=merchant_id, 
+                merchant_id=merchant_id,
                 idempotency_key=request.idempotency_key,
             )
 
-            if existing_record is None:
-                # This should be treated as an unexpected condition.
-                raise
 
-            if existing_record.request_hash != request_hash:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Idempotency key has already been used "
-                        "for a different request."
+            if existing_record:
+
+                # Same key, different request
+                if existing_record.request_hash != request_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Idempotency key has already been used "
+                            "for a different request."
+                        ),
+                    )
+
+                # Same key, same request
+                return CreatePaymentResult(
+                    response=CreatePaymentResponse(
+                        **existing_record.response_snapshot
                     ),
+                    should_process=False,
+            )
+
+            # ---------------------------------------------------------
+            # 3. Validate Merchant Payment Method
+            # ---------------------------------------------------------
+
+            merchant_payment_method = (
+                MerchantPaymentMethodRepository.get_by_id_for_merchant(
+                    db=db,
+                    merchant_payment_method_id=(
+                        request.merchant_payment_method_id
+                    ),
+                    merchant_id=merchant_id,
+                )
+            )
+
+            if merchant_payment_method is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Merchant payment method not found.",
                 )
 
-            return CreatePaymentResult(
-                response=CreatePaymentResponse(
-                    **existing_record.response_snapshot
-                ),
-                should_process=False,
-            )
-        # ---------------------------------------------------------
-        # 9. Commit entire payment transaction
-        # ---------------------------------------------------------
+            if not merchant_payment_method.is_enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Merchant payment method is disabled.",
+                )
 
-        
-        db.commit()
-        # return response
-        
-        return CreatePaymentResult(
-        response=response,
-        should_process=True,
-    )
+            # ---------------------------------------------------------
+            # 4. Retrieve Gateway Payment Method
+            # ---------------------------------------------------------
+
+            payment_method = self.payment_method_repository.get_by_id(
+                db=db,
+                payment_method_id=merchant_payment_method.payment_method_id,
+            )
+
+            if payment_method is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Payment method not found.",
+                )
+
+            if not payment_method.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Payment method is inactive.",
+                )
+
+            # ---------------------------------------------------------
+            # 5. Create Payment
+            # ---------------------------------------------------------
+
+            payment = Payment(
+                merchant_id=merchant_id,
+                merchant_payment_method_id=(
+                    request.merchant_payment_method_id
+                ),
+                amount=request.amount,
+                currency=request.currency,
+                status=PaymentStatus.PROCESSING,
+                payment_metadata=request.payment_metadata,
+            )
+
+            PaymentRepository.create(
+                db=db,
+                payment=payment,
+            )
+
+            # ---------------------------------------------------------
+            # 6. Create Initial Payment History
+            # ---------------------------------------------------------
+
+            payment_history = PaymentHistory(
+                payment_id=payment.payment_id,
+                old_state=None,
+                new_state=PaymentStatus.PROCESSING,
+            )
+
+            PaymentHistoryRepository.create(
+                db=db,
+                history=payment_history,
+            )
+            outbox_event = OutboxService()
+            outbox_event.create_payment_processing_event(
+            db=db,
+            payment_id=payment.payment_id,
+        )     
+
+            # ---------------------------------------------------------
+            # 7. Build response
+            # ---------------------------------------------------------
+
+            response = CreatePaymentResponse(
+                payment_id=payment.payment_id,
+                status=payment.status,
+                created_at=payment.created_at,
+            )
+
+            # ---------------------------------------------------------
+            # 8. Create Idempotency Record
+            # ---------------------------------------------------------
+
+            idempotency_record = IdempotencyKey(
+                merchant_id=merchant_id,
+                payment_id=payment.payment_id,
+                idempotency_key=request.idempotency_key,
+                request_hash=request_hash,
+                response_snapshot=response.model_dump(mode="json"),
+            )
+            # Handle potential race condition where two requests with the same idempotency key are processed concurrently.
+            try:
+                IdempotencyKeyRepository.create(
+                    db=db,
+                    idempotency_record=idempotency_record,
+                )
+
+            except IntegrityError as exc:
+
+                constraint_name = exc.orig.diag.constraint_name
+                print(f"IntegrityError: {exc.orig}, Constraint: {constraint_name}")
+                if constraint_name != "uq_merchant_idempotency_key":
+                    raise
+
+                db.rollback()
+
+                existing_record = IdempotencyKeyRepository.get_by_key(
+                    db=db,
+                    merchant_id=merchant_id, 
+                    idempotency_key=request.idempotency_key,
+                )
+
+                if existing_record is None:
+                    # This should be treated as an unexpected condition.
+                    raise
+
+                if existing_record.request_hash != request_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Idempotency key has already been used "
+                            "for a different request."
+                        ),
+                    )
+
+                return CreatePaymentResult(
+                    response=CreatePaymentResponse(
+                        **existing_record.response_snapshot
+                    ),
+                    should_process=False,
+                )
+            # ---------------------------------------------------------
+            # 9. Commit entire payment transaction
+            # ---------------------------------------------------------
+ 
+            
+            db.commit()
+            # return response
+            
+            return CreatePaymentResult(
+            response=response,
+            should_process=True,
+        )
+        except HTTPException:
+        # Preserve intentional HTTP errors such as 404, 403, and 409.
+            db.rollback()
+            raise
+
+        except Exception as exc:
+        # Roll back the transaction and log the actual exception.
+            db.rollback()
+
+        logger.exception(
+            "Unexpected error while creating payment for merchant %s",
+            merchant_id,
+        )
+
+        # Do not expose internal database or implementation details.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while creating the payment.",
+        ) from exc
         
        
     def process_payment(self,
