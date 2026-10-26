@@ -35,10 +35,10 @@ def create_payment(
         merchant_id=merchant.merchant_id,
         request=request,
     )
-    if result.should_process:
-        publish_payment_processing(
-            payment_id=result.response.payment_id,
-        )
+    # if result.should_process:
+    #     publish_payment_processing(
+    #         payment_id=result.response.payment_id,
+    #     )
 
 
 
